@@ -2,5 +2,5 @@ import 'package:flutter/material.dart';
 import 'package:ohayo/screen/homeScreen.dart';
 
 void main(){
-  runApp(Homescreen());
+  runApp( const Homescreen());
 }
