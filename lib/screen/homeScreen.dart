@@ -18,9 +18,10 @@ class Homescreen extends StatelessWidget {
 }
 
 class Task {
-  Task({required this.title, this.done = false});
+  Task({required this.title, this.done = false, this.dueDate});
   String title;
   bool done;
+  DateTime? dueDate;
 }
 
 class HomeScreentwo extends StatefulWidget {
@@ -32,15 +33,16 @@ class HomeScreentwo extends StatefulWidget {
 
 class _HomeScreentwoState extends State<HomeScreentwo>
     with SingleTickerProviderStateMixin {
-  // Color palette pulled out so it's consistent everywhere instead of
-  // repeating hex codes all over the widget tree.
-  static const bg = Color(0xFF836664);
-  static const accent = Color.fromRGBO(128, 57, 41, 1.0);
-  static const highlight = Color(0xFFCA5750);
+  // Clean minimal palette: white/near-white base, one accent color used
+  // for everything interactive (icons, checkboxes, FAB, indicators).
+  static const accent = Color(0xFF6C63FF);
+  static const bg = Color(0xFFFAFAFC);
+  static const textDark = Color(0xFF1E1E2A);
+  static const textMuted = Color(0xFF8B8B99);
 
   late final TabController _tabController;
 
-  // In-memory only for now — swap this for SQLite reads/writes later.
+  // In-memory only for now — swap for SQLite reads/writes later.
   final List<Task> _tasks = [];
 
   @override
@@ -67,6 +69,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
         content: const Text("Your privacy policy text goes here."),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(foregroundColor: accent),
             onPressed: () => Navigator.pop(context),
             child: const Text("Close"),
           ),
@@ -75,137 +78,209 @@ class _HomeScreentwoState extends State<HomeScreentwo>
     );
   }
 
-  // Fancy formal add-task sheet: a Card holding a TextField, opened from
-  // the FAB. showModalBottomSheet instead of a plain AlertDialog so it
-  // slides up and feels more like a proper form.
   void _addTaskSheet() {
     final controller = TextEditingController();
+    DateTime? selectedDate;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Card(
-              elevation: 8,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.add_task, color: accent),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "New Task",
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const Text(
+                      "New Task",
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textDark),
+                    ),
+                    const SizedBox(height: 20),
                     TextField(
                       controller: controller,
                       autofocus: true,
                       textCapitalization: TextCapitalization.sentences,
+                      style: const TextStyle(color: textDark),
                       decoration: InputDecoration(
-                        labelText: "Task title",
                         hintText: "e.g. Finish CpEPC 120 lab",
-                        prefixIcon: const Icon(Icons.edit_outlined),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        hintStyle: TextStyle(color: Colors.grey.shade400),
+                        filled: true,
+                        fillColor: bg,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: accent, width: 2),
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: accent, width: 1.5),
                         ),
                       ),
-                      onSubmitted: (_) => _submitTask(controller),
                     ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accent,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+
+                    // ── DUE DATE — new block ──
+                    const SizedBox(height: 12),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate ?? DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          builder: (context, child) => Theme(
+                            data: Theme.of(context).copyWith(
+                              colorScheme: const ColorScheme.light(primary: accent),
+                            ),
+                            child: child!,
                           ),
-                          onPressed: () => _submitTask(controller),
-                          icon: const Icon(Icons.check),
-                          label: const Text("Add Task"),
+                        );
+                        if (picked != null) {
+                          setSheetState(() => selectedDate = picked);
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: bg,
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                      ],
+                        child: Row(
+                          children: [
+                            Icon(Icons.calendar_today_outlined, size: 18, color: Colors.grey.shade500),
+                            const SizedBox(width: 10),
+                            Text(
+                              selectedDate == null
+                                  ? "Set due date (optional)"
+                                  : "${selectedDate!.month}/${selectedDate!.day}/${selectedDate!.year}",
+                              style: TextStyle(
+                                color: selectedDate == null ? Colors.grey.shade500 : textDark,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (selectedDate != null)
+                              GestureDetector(
+                                onTap: () => setSheetState(() => selectedDate = null),
+                                child: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // ── END DUE DATE ──
+
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accent,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () => _submitTask(controller, selectedDate),
+                        child: const Text("Add Task", style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
 
-  void _submitTask(TextEditingController controller) {
+  void _submitTask(TextEditingController controller, DateTime? dueDate) {
     final text = controller.text.trim();
     if (text.isNotEmpty) {
-      setState(() => _tasks.add(Task(title: text)));
+      setState(() => _tasks.add(Task(title: text, dueDate: dueDate)));
     }
     Navigator.pop(context);
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: bg,
       drawer: Drawer(
-        backgroundColor: bg.withOpacity(0.95),
+        backgroundColor: Colors.white,
         child: SafeArea(
           child: ListView(
             padding: EdgeInsets.zero,
             children: [
-              DrawerHeader(
-                decoration: const BoxDecoration(color: accent),
-                child: const Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Text(
-                    "Menu",
-                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.check_circle_outline, color: accent),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      "Menu",
+                      style: TextStyle(color: textDark, fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.font_download, color: Colors.white),
-                title: const Text("Display", style: TextStyle(color: Colors.white)),
+              _DrawerItem(
+                icon: Icons.font_download_outlined,
+                label: "Display",
+                accent: accent,
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const Display()));
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.settings, color: Colors.white),
-                title: const Text("Settings", style: TextStyle(color: Colors.white)),
+              _DrawerItem(
+                icon: Icons.settings_outlined,
+                label: "Settings",
+                accent: accent,
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const Setting()));
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.privacy_tip_outlined, color: Colors.white),
-                title: const Text("Privacy and Policy", style: TextStyle(color: Colors.white)),
+              _DrawerItem(
+                icon: Icons.privacy_tip_outlined,
+                label: "Privacy and Policy",
+                accent: accent,
                 onTap: () {
                   Navigator.pop(context);
                   _privacy();
@@ -216,18 +291,22 @@ class _HomeScreentwoState extends State<HomeScreentwo>
         ),
       ),
       appBar: AppBar(
-        backgroundColor: accent,
-        elevation: 4,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: textDark),
         title: const Text(
           "To-Do List",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24, color: Colors.white),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: textDark),
         ),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.white,
+          indicatorColor: accent,
           indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+          indicatorSize: TabBarIndicatorSize.label,
+          labelColor: accent,
+          unselectedLabelColor: textMuted,
+          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
           tabs: [
             Tab(text: "Tasks (${_activeTasks.length})"),
             Tab(text: "Completed (${_completedTasks.length})"),
@@ -236,37 +315,52 @@ class _HomeScreentwoState extends State<HomeScreentwo>
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: accent,
+        elevation: 2,
         onPressed: _addTaskSheet,
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      // TabBarView gives the swipe-between-tabs behavior for free —
-      // swiping left/right moves between Tasks and Completed, and it
-      // stays in sync with the TabBar above.
-      body: Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          color: Color(0xFFF6EDEC),
-        ),
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            _TaskList(
-              tasks: _activeTasks,
-              accent: accent,
-              emptyMessage: "Add a task by tapping +",
-              onToggle: (task) => setState(() => task.done = !task.done),
-              onDelete: (task) => setState(() => _tasks.remove(task)),
-            ),
-            _TaskList(
-              tasks: _completedTasks,
-              accent: accent,
-              emptyMessage: "No completed tasks yet",
-              onToggle: (task) => setState(() => task.done = !task.done),
-              onDelete: (task) => setState(() => _tasks.remove(task)),
-            ),
-          ],
-        ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _TaskList(
+            tasks: _activeTasks,
+            accent: accent,
+            emptyMessage: "No tasks yet — tap + to add one",
+            onToggle: (task) => setState(() => task.done = !task.done),
+            onDelete: (task) => setState(() => _tasks.remove(task)),
+          ),
+          _TaskList(
+            tasks: _completedTasks,
+            accent: accent,
+            emptyMessage: "No completed tasks yet",
+            onToggle: (task) => setState(() => task.done = !task.done),
+            onDelete: (task) => setState(() => _tasks.remove(task)),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: accent),
+      title: Text(label, style: const TextStyle(color: _HomeScreentwoState.textDark, fontWeight: FontWeight.w500)),
+      onTap: onTap,
     );
   }
 }
@@ -290,36 +384,63 @@ class _TaskList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (tasks.isEmpty) {
       return Center(
-        child: Text(
-          emptyMessage,
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.checklist_rtl, size: 48, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text(
+              emptyMessage,
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
+            ),
+          ],
         ),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 80),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       itemCount: tasks.length,
       itemBuilder: (context, index) {
         final task = tasks[index];
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
           child: ListTile(
-            leading: Checkbox(
-              value: task.done,
-              activeColor: accent,
-              onChanged: (_) => onToggle(task),
+            contentPadding: EdgeInsets.zero,
+            leading: GestureDetector(
+              onTap: () => onToggle(task),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: task.done ? accent : Colors.transparent,
+                  border: Border.all(color: task.done ? accent : Colors.grey.shade400, width: 2),
+                ),
+                child: task.done ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+              ),
             ),
             title: Text(
               task.title,
               style: TextStyle(
                 decoration: task.done ? TextDecoration.lineThrough : null,
-                color: task.done ? Colors.grey : Colors.black87,
+                color: task.done ? Colors.grey.shade400 : const Color(0xFF1E1E2A),
+                fontWeight: FontWeight.w500,
               ),
             ),
+            subtitle: task.dueDate != null
+              ? Text(
+              "Due ${task.dueDate!.month}/${task.dueDate!.day}/${task.dueDate!.year}",
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            )
+            :null,
             trailing: IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.grey),
+              icon: Icon(Icons.close, size: 20, color: Colors.grey.shade400),
               onPressed: () => onDelete(task),
             ),
           ),
