@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:ohayo/display.dart';
 import 'package:ohayo/setting.dart';
+import 'package:ohayo/theme_notifier.dart';
 
 // Homescreen is the app's root widget (called from runApp in main.dart).
-// This is the ONLY MaterialApp in the tree — it provides Directionality,
-// Navigator, theming, etc. to everything below it.
+// This is the ONLY MaterialApp in the tree.
 class Homescreen extends StatelessWidget {
   const Homescreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: HomeScreentwo(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: AppTheme.isDarkMode,
+      builder: (context, isDark, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+          theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
+          home: const HomeScreentwo(),
+        );
+      },
     );
   }
 }
@@ -33,16 +41,11 @@ class HomeScreentwo extends StatefulWidget {
 
 class _HomeScreentwoState extends State<HomeScreentwo>
     with SingleTickerProviderStateMixin {
-  // Clean minimal palette: white/near-white base, one accent color used
-  // for everything interactive (icons, checkboxes, FAB, indicators).
-  static const accent = Color(0xFF6C63FF);
-  static const bg = Color(0xFFFAFAFC);
-  static const textDark = Color(0xFF1E1E2A);
+  // bg/textDark/textMuted stay fixed — only the accent color is dynamic
+  // now, driven by AppTheme.accentColor (set from the Display screen).
   static const textMuted = Color(0xFF8B8B99);
 
   late final TabController _tabController;
-
-  // In-memory only for now — swap for SQLite reads/writes later.
   final List<Task> _tasks = [];
 
   @override
@@ -61,6 +64,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
   List<Task> get _completedTasks => _tasks.where((t) => t.done).toList();
 
   void _privacy() {
+    final accent = AppTheme.accentColor.value;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -79,7 +83,11 @@ class _HomeScreentwoState extends State<HomeScreentwo>
   }
 
   void _addTaskSheet() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF121212) : const Color(0xFFFAFAFC);
+    final textDark = isDark ? Colors.white : const Color(0xFF1E1E2A);
     final controller = TextEditingController();
+    final accent = AppTheme.accentColor.value;
     DateTime? selectedDate;
 
     showModalBottomSheet(
@@ -117,7 +125,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                         ),
                       ),
                     ),
-                    const Text(
+                     Text(
                       "New Task",
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textDark),
                     ),
@@ -126,7 +134,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                       controller: controller,
                       autofocus: true,
                       textCapitalization: TextCapitalization.sentences,
-                      style: const TextStyle(color: textDark),
+                      style:  TextStyle(color: textDark),
                       decoration: InputDecoration(
                         hintText: "e.g. Finish CpEPC 120 lab",
                         hintStyle: TextStyle(color: Colors.grey.shade400),
@@ -139,12 +147,10 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: accent, width: 1.5),
+                          borderSide: BorderSide(color: accent, width: 1.5),
                         ),
                       ),
                     ),
-
-                    // ── DUE DATE — new block ──
                     const SizedBox(height: 12),
                     InkWell(
                       borderRadius: BorderRadius.circular(14),
@@ -156,7 +162,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                           builder: (context, child) => Theme(
                             data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.light(primary: accent),
+                              colorScheme: ColorScheme.light(primary: accent),
                             ),
                             child: child!,
                           ),
@@ -194,8 +200,6 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                         ),
                       ),
                     ),
-                    // ── END DUE DATE ──
-
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
@@ -228,116 +232,128 @@ class _HomeScreentwoState extends State<HomeScreentwo>
     }
     Navigator.pop(context);
   }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: bg,
-      drawer: Drawer(
-        backgroundColor: Colors.white,
-        child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.zero,
+    // Rebuilds this whole screen whenever AppTheme.accentColor changes —
+    // e.g. right after picking a new color on the Display screen.
+    return ValueListenableBuilder<Color>(
+      valueListenable: AppTheme.accentColor,
+      builder: (context, accent, _) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final bg = isDark ? const Color(0xFF121212) : const Color(0xFFFAFAFC);
+        final surface = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+        final textDark = isDark ? Colors.white : const Color(0xFF1E1E2A);
+        return Scaffold(
+          backgroundColor: bg,
+          drawer: Drawer(
+            backgroundColor: surface,
+            child: SafeArea(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.check_circle_outline, color: accent),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          "Menu",
+                          style: TextStyle(color: textDark, fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _DrawerItem(
+                    icon: Icons.font_download_outlined,
+                    label: "Display",
+                    accent: accent,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const Display()));
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.settings_outlined,
+                    label: "Settings",
+                    accent: accent,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const Setting()));
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.privacy_tip_outlined,
+                    label: "Privacy and Policy",
+                    accent: accent,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _privacy();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          appBar: AppBar(
+            backgroundColor: surface,
+            elevation: 0,
+            surfaceTintColor: surface,
+            iconTheme:  IconThemeData(color: textDark),
+            title:  Text(
+              "To-Do List",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: textDark),
+            ),
+            bottom: TabBar(
+              controller: _tabController,
+              indicatorColor: accent,
+              indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelColor: accent,
+              unselectedLabelColor: textMuted,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+              tabs: [
+                Tab(text: "Tasks (${_activeTasks.length})"),
+                Tab(text: "Completed (${_completedTasks.length})"),
+              ],
+            ),
+          ),
+          floatingActionButton: FloatingActionButton(
+            backgroundColor: accent,
+            elevation: 2,
+            onPressed: _addTaskSheet,
+            child: const Icon(Icons.add, color: Colors.white),
+          ),
+          body: TabBarView(
+            controller: _tabController,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.check_circle_outline, color: accent),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      "Menu",
-                      style: TextStyle(color: textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-              _DrawerItem(
-                icon: Icons.font_download_outlined,
-                label: "Display",
+              _TaskList(
+                tasks: _activeTasks,
                 accent: accent,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const Display()));
-                },
+                emptyMessage: "No tasks yet — tap + to add one",
+                onToggle: (task) => setState(() => task.done = !task.done),
+                onDelete: (task) => setState(() => _tasks.remove(task)),
               ),
-              _DrawerItem(
-                icon: Icons.settings_outlined,
-                label: "Settings",
+              _TaskList(
+                tasks: _completedTasks,
                 accent: accent,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const Setting()));
-                },
-              ),
-              _DrawerItem(
-                icon: Icons.privacy_tip_outlined,
-                label: "Privacy and Policy",
-                accent: accent,
-                onTap: () {
-                  Navigator.pop(context);
-                  _privacy();
-                },
+                emptyMessage: "No completed tasks yet",
+                onToggle: (task) => setState(() => task.done = !task.done),
+                onDelete: (task) => setState(() => _tasks.remove(task)),
               ),
             ],
           ),
-        ),
-      ),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: textDark),
-        title: const Text(
-          "To-Do List",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: textDark),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: accent,
-          indicatorWeight: 3,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelColor: accent,
-          unselectedLabelColor: textMuted,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-          tabs: [
-            Tab(text: "Tasks (${_activeTasks.length})"),
-            Tab(text: "Completed (${_completedTasks.length})"),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: accent,
-        elevation: 2,
-        onPressed: _addTaskSheet,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _TaskList(
-            tasks: _activeTasks,
-            accent: accent,
-            emptyMessage: "No tasks yet — tap + to add one",
-            onToggle: (task) => setState(() => task.done = !task.done),
-            onDelete: (task) => setState(() => _tasks.remove(task)),
-          ),
-          _TaskList(
-            tasks: _completedTasks,
-            accent: accent,
-            emptyMessage: "No completed tasks yet",
-            onToggle: (task) => setState(() => task.done = !task.done),
-            onDelete: (task) => setState(() => _tasks.remove(task)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -359,7 +375,13 @@ class _DrawerItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: accent),
-      title: Text(label, style: const TextStyle(color: _HomeScreentwoState.textDark, fontWeight: FontWeight.w500)),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: Theme.of(context).brightness == Brightness.dark ? Colors.white : const Color(0xFF1E1E2A),
+          fontWeight: FontWeight.w500,
+        ),
+      ),
       onTap: onTap,
     );
   }
@@ -382,6 +404,7 @@ class _TaskList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (tasks.isEmpty) {
       return Center(
         child: Column(
@@ -406,9 +429,9 @@ class _TaskList extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade200),
+            border: Border.all(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
           ),
           child: ListTile(
             contentPadding: EdgeInsets.zero,
@@ -429,16 +452,16 @@ class _TaskList extends StatelessWidget {
               task.title,
               style: TextStyle(
                 decoration: task.done ? TextDecoration.lineThrough : null,
-                color: task.done ? Colors.grey.shade400 : const Color(0xFF1E1E2A),
+                color: task.done ? Colors.grey.shade400 : (isDark ? Colors.white : const Color(0xFF1E1E2A)),
                 fontWeight: FontWeight.w500,
               ),
             ),
             subtitle: task.dueDate != null
-              ? Text(
+                ? Text(
               "Due ${task.dueDate!.month}/${task.dueDate!.day}/${task.dueDate!.year}",
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
             )
-            :null,
+                : null,
             trailing: IconButton(
               icon: Icon(Icons.close, size: 20, color: Colors.grey.shade400),
               onPressed: () => onDelete(task),
