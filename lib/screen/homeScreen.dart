@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:ohayo/display.dart';
 import 'package:ohayo/setting.dart';
 import 'package:ohayo/theme_notifier.dart';
+import 'package:ohayo/db/database_helper.dart';
+import 'package:ohayo/calendar.dart';
 
 // Homescreen is the app's root widget (called from runApp in main.dart).
 // This is the ONLY MaterialApp in the tree.
@@ -26,12 +28,23 @@ class Homescreen extends StatelessWidget {
 }
 
 class Task {
-  Task({required this.title, this.done = false, this.dueDate});
+  Task({this.id, required this.title, this.done = false, this.dueDate, this.priority = 'normal'});
+  int? id;
   String title;
   bool done;
   DateTime? dueDate;
-}
+  String priority;
 
+  factory Task.fromMap(Map<String, dynamic> map) {
+    return Task(
+      id: map['id'] as int?,
+      title: map['title'] as String,
+      done: (map['done'] as int) == 1,
+      dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate'] as String) : null,
+      priority: (map['priority'] as String?) ?? 'normal',
+    );
+  }
+}
 class HomeScreentwo extends StatefulWidget {
   const HomeScreentwo({super.key});
 
@@ -52,6 +65,17 @@ class _HomeScreentwoState extends State<HomeScreentwo>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadTasks();
+  }
+
+  Future<void> _loadTasks() async {
+    final rows = await DatabaseHelper.instance.getTasks();
+    print("Loaded ${rows.length} tasks from DB");
+    setState(() {
+      _tasks
+        ..clear()
+        ..addAll(rows.map((row) => Task.fromMap(row)));
+    });
   }
 
   @override
@@ -60,7 +84,11 @@ class _HomeScreentwoState extends State<HomeScreentwo>
     super.dispose();
   }
 
-  List<Task> get _activeTasks => _tasks.where((t) => !t.done).toList();
+  List<Task> get _activeTasks {
+    final list = _tasks.where((t) => !t.done).toList();
+    list.sort((a, b) => a.priority == b.priority ? 0 : (a.priority == 'important' ? -1 : 1));
+    return list;
+  }
   List<Task> get _completedTasks => _tasks.where((t) => t.done).toList();
 
   void _privacy() {
@@ -89,6 +117,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
     final controller = TextEditingController();
     final accent = AppTheme.accentColor.value;
     DateTime? selectedDate;
+    String selectedPriority = 'normal';
 
     showModalBottomSheet(
       context: context,
@@ -200,9 +229,33 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedPriority,
+                    isExpanded: true,
+                    icon: Icon(Icons.flag_outlined, color: Colors.grey.shade500),
+                    items: const [
+                      DropdownMenuItem(value: 'important', child: Text("Important — do this now")),
+                      DropdownMenuItem(value: 'normal', child: Text("Less important")),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setSheetState(() => selectedPriority = value);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accent,
@@ -211,7 +264,7 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        onPressed: () => _submitTask(controller, selectedDate),
+                        onPressed: () => _submitTask(controller, selectedDate, selectedPriority),
                         child: const Text("Add Task", style: TextStyle(fontWeight: FontWeight.w600)),
                       ),
                     ),
@@ -225,10 +278,16 @@ class _HomeScreentwoState extends State<HomeScreentwo>
     );
   }
 
-  void _submitTask(TextEditingController controller, DateTime? dueDate) {
+  void _submitTask(TextEditingController controller, DateTime? dueDate, String priority) async {
     final text = controller.text.trim();
     if (text.isNotEmpty) {
-      setState(() => _tasks.add(Task(title: text, dueDate: dueDate)));
+      final id = await DatabaseHelper.instance.insertTask({
+        'title': text,
+        'done': 0,
+        'dueDate': dueDate?.toIso8601String(),
+        'priority': priority,
+      });
+      setState(() => _tasks.add(Task(id: id, title: text, dueDate: dueDate, priority: priority)));
     }
     Navigator.pop(context);
   }
@@ -292,6 +351,15 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                     },
                   ),
                   _DrawerItem(
+                    icon: Icons.calendar_month_outlined,
+                    label: "Calendar",
+                    accent: accent,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const Calendar()));
+                    },
+                  ),
+                  _DrawerItem(
                     icon: Icons.privacy_tip_outlined,
                     label: "Privacy and Policy",
                     accent: accent,
@@ -300,6 +368,8 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                       _privacy();
                     },
                   ),
+
+
                 ],
               ),
             ),
@@ -340,15 +410,37 @@ class _HomeScreentwoState extends State<HomeScreentwo>
                 tasks: _activeTasks,
                 accent: accent,
                 emptyMessage: "No tasks yet — tap + to add one",
-                onToggle: (task) => setState(() => task.done = !task.done),
-                onDelete: (task) => setState(() => _tasks.remove(task)),
+                onToggle: (task) async {
+                  final updated = !task.done;
+                  await DatabaseHelper.instance.updateTask(task.id!, {
+                    'title': task.title,
+                    'done': updated ? 1 : 0,
+                    'dueDate': task.dueDate?.toIso8601String(),
+                  });
+                  setState(() => task.done = updated);
+                },
+                onDelete: (task) async {
+                  await DatabaseHelper.instance.deleteTask(task.id!);
+                  setState(() => _tasks.remove(task));
+                },
               ),
               _TaskList(
                 tasks: _completedTasks,
                 accent: accent,
                 emptyMessage: "No completed tasks yet",
-                onToggle: (task) => setState(() => task.done = !task.done),
-                onDelete: (task) => setState(() => _tasks.remove(task)),
+                onToggle: (task) async {
+                  final updated = !task.done;
+                  await DatabaseHelper.instance.updateTask(task.id!, {
+                    'title': task.title,
+                    'done': updated ? 1 : 0,
+                    'dueDate': task.dueDate?.toIso8601String(),
+                  });
+                  setState(() => task.done = updated);
+                },
+                onDelete: (task) async {
+                  await DatabaseHelper.instance.deleteTask(task.id!);
+                  setState(() => _tasks.remove(task));
+                },
               ),
             ],
           ),
@@ -462,9 +554,19 @@ class _TaskList extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
             )
                 : null,
-            trailing: IconButton(
-              icon: Icon(Icons.close, size: 20, color: Colors.grey.shade400),
-              onPressed: () => onDelete(task),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (task.priority == 'important')
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Icon(Icons.flag, size: 18, color: Colors.redAccent),
+                  ),
+                IconButton(
+                  icon: Icon(Icons.close, size: 20, color: Colors.grey.shade400),
+                  onPressed: () => onDelete(task),
+                ),
+              ],
             ),
           ),
         );
